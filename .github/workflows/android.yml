@@ -19,23 +19,21 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      - name: Set up Android SDK & NDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          api-level: 33
-          build-tools: "33.0.2"
-          ndk-version: "26.1.10909125"
-          cmake-version: "3.22.1"
 
-      - name: Ensure Gradle Wrapper exists
+      - name: Install Android SDK 33, NDK & CMake
         run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version 8.7 --distribution-type bin
-          fi
-          chmod +x gradlew
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-33" "build-tools;33.0.2" "ndk;26.1.10909125" "cmake;3.22.1"
+
+      - name: Setup Gradle & Generate Wrapper
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -43,4 +41,3 @@ jobs:
           name: Alaa.m-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
