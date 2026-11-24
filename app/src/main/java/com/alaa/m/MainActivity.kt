@@ -1,6 +1,5 @@
 package com.alaa.m
 
-import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -68,15 +67,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-class AlaaApp : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        Thread.setDefaultUncaughtExceptionHandler { _, _ ->
-            // Prevent hard silent crash loops on MIUI background threads
-        }
-    }
-}
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,23 +101,52 @@ fun AlaaNetScreen() {
     var selectedDeviceForSites by remember { mutableStateOf<NetworkDevice?>(null) }
     var siteInput by remember { mutableStateOf("") }
 
+    fun requestRootNow(showMessage: Boolean = false) {
+        scope.launch {
+            statusMessage = "جاري طلب صلاحية الجذر (su)..."
+            val rootOk = try {
+                withContext(Dispatchers.IO) { RootNetEngine.checkRootAccess() }
+            } catch (_: Throwable) {
+                false
+            }
+            hasRoot = rootOk
+            statusMessage = if (rootOk) {
+                "تم تفعيل صلاحية الجذر (Root) بنجاح"
+            } else {
+                "لم يتم منح صلاحية الجذر (su) — تحقق من Magisk"
+            }
+            if (showMessage) {
+                snackbarHostState.showSnackbar(statusMessage)
+            }
+        }
+    }
+
     fun triggerScan(showToast: Boolean = false) {
         if (isScanning) return
         scope.launch {
             isScanning = true
             try {
-                val rootOk = withContext(Dispatchers.IO) { RootNetEngine.checkRootAccess() }
+                val rootOk = try {
+                    withContext(Dispatchers.IO) { RootNetEngine.checkRootAccess() }
+                } catch (_: Throwable) {
+                    false
+                }
                 hasRoot = rootOk
 
-                val scanned = withContext(Dispatchers.IO) {
-                    RootNetEngine.scanNetwork(
-                        context = context,
-                        blockedIps = blockedIps.filterValues { it }.keys,
-                        blockedMacs = blockedMacs.filterValues { it }.keys,
-                        blockedSitesByDevice = blockedSites.mapValues { it.value.toSet() },
-                        allowedSitesByDevice = allowedSites.mapValues { it.value.toSet() }
-                    )
+                val scanned = try {
+                    withContext(Dispatchers.IO) {
+                        RootNetEngine.scanNetwork(
+                            context = context,
+                            blockedIps = blockedIps.filterValues { it }.keys,
+                            blockedMacs = blockedMacs.filterValues { it }.keys,
+                            blockedSitesByDevice = blockedSites.mapValues { it.value.toSet() },
+                            allowedSitesByDevice = allowedSites.mapValues { it.value.toSet() }
+                        )
+                    }
+                } catch (_: Throwable) {
+                    emptyList()
                 }
+
                 devices = scanned
                 statusMessage = if (rootOk) {
                     "تم الفحص بصلاحيات الجذر (Root) • الأجهزة النشطة: ${scanned.size}"
@@ -146,9 +165,10 @@ fun AlaaNetScreen() {
     }
 
     LaunchedEffect(Unit) {
+        requestRootNow(showMessage = false)
         triggerScan(showToast = false)
         while (true) {
-            delay(6000L)
+            delay(8000L)
             triggerScan(showToast = false)
         }
     }
@@ -215,7 +235,11 @@ fun AlaaNetScreen() {
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        if (isScanning) {
+                        if (!hasRoot) {
+                            TextButton(onClick = { requestRootNow(showMessage = true) }) {
+                                Text("طلب الروت")
+                            }
+                        } else if (isScanning) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp
@@ -239,6 +263,7 @@ fun AlaaNetScreen() {
                                 }
                                 if (ok) {
                                     isNetworkLocked = nextLock
+                                    hasRoot = true
                                     snackbarHostState.showSnackbar(
                                         if (nextLock) "تم حظر الشبكة بالكامل" else "تم فك حظر الشبكة بالكامل"
                                     )
