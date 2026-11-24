@@ -50,36 +50,32 @@ object RootNetEngine {
     private var lastSampleTimeMs: Long = 0L
 
     fun runRootCommand(command: String, timeoutSec: Long = 8): Pair<Boolean, String> {
-        if (command.isBlank()) return Pair(false, "Empty command")
-        return try {
-            val process = ProcessBuilder("su", "-c", command)
-                .redirectErrorStream(true)
-                .start()
+    if (command.isBlank()) return Pair(false, "Empty command")
+    return try {
+        val process = ProcessBuilder("su", "-c", command)
+            .redirectErrorStream(true)
+            .start()
 
-            val outputBuilder = StringBuilder()
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                outputBuilder.append(line).append('\n')
-            }
-
-            val finished = process.waitFor(timeoutSec, TimeUnit.SECONDS)
-            if (!finished) {
-                process.destroyForcibly()
-                return Pair(false, "Root command timed out")
-            }
-
-            val exitCode = process.exitValue()
-            Pair(exitCode == 0, outputBuilder.toString().trim())
-        } catch (e: Throwable) {
-            Pair(false, e.message ?: "Root execution error")
+        val finished = process.waitFor(timeoutSec, TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            return Pair(false, "Root command timed out")
         }
-    }
 
-    fun checkRootAccess(): Boolean {
-        val (ok, out) = runRootCommand("id -u", timeoutSec = 5)
-        return ok && out.trim() == "0"
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val exitCode = process.exitValue()
+        Pair(exitCode == 0, output)
+    } catch (e: Throwable) {
+        Pair(false, e.message ?: "Root execution error")
     }
+}
+
+fun checkRootAccess(): Boolean {
+    val (ok, out) = runRootCommand("id -u", timeoutSec = 6)
+    return ok && out.trim() == "0"
+}
+
+
 
     fun getLocalSubnetPrefix(context: Context): String {
         return try {
